@@ -34,8 +34,14 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include "systhread.h"
 #include <time.h>
 #include <errno.h>
-#include <sys/sysctl.h>
+
+#if HAVE_SYS_SYSCTL_H
+# include <sys/sysctl.h>
+#endif
+
+#ifdef __APPLE__
 #include <mach/mach_time.h>
+#endif
 
 /* Only MS-DOS does not define `subprocesses'.  */
 #ifdef subprocesses
@@ -1334,13 +1340,16 @@ process_write_thread_start(void * args)
 
               process_write_buffer_list_mutex_unlock();
 
-              int flags = FWRITE;
               int written_count = write (fd, process_write_thread__copy_buffer, batch_size);
-              char throwaway = '\n';
               if (written_count < 0 && errno == EAGAIN)
                 {
-                  int flags = FWRITE;
-                  ioctl (fd, TIOCFLUSH, &flags);
+#ifdef WINDOWSNT
+		  // FIXME: untested
+		  if (fd_info[ fd ].flags & FILE_SERIAL)
+		    PurgeComm (fd_info[ fd ].hnd, PURGE_TXCLEAR);
+#else /* not WINDOWSNT */
+		  tcflush (fd, TCOFLUSH);
+#endif /* not WINDOWSNT */
                   delay_next_write = true;
                 }
               process_write_buffer_list_mutex_lock();
